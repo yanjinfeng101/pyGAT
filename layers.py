@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+#GAT只需要堆图注意力层
 class GraphAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -16,31 +16,31 @@ class GraphAttentionLayer(nn.Module):
         self.alpha = alpha
         self.concat = concat
 
-        self.W = nn.Parameter(torch.empty(size=(in_features, out_features)))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
-        self.a = nn.Parameter(torch.empty(size=(2*out_features, 1)))
+        self.W = nn.Parameter(torch.empty(size=(in_features, out_features)))##建立都是0的权值矩阵，大小为（输入维度，输出维度）
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)#xavier初始化
+        self.a = nn.Parameter(torch.empty(size=(2*out_features, 1)))#a,权重向量
         nn.init.xavier_uniform_(self.a.data, gain=1.414)
 
-        self.leakyrelu = nn.LeakyReLU(self.alpha)
+        self.leakyrelu = nn.LeakyReLU(self.alpha)#加入非线性激活，负斜率=0.2
 
     def forward(self, h, adj):
         Wh = torch.mm(h, self.W) # h.shape: (N, in_features), Wh.shape: (N, out_features)
-        a_input = self._prepare_attentional_mechanism_input(Wh)
-        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
+        a_input = self._prepare_attentional_mechanism_input(Wh)#完成了Whi和Whj的拼接
+        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))#乘以a,#即论文里的eij,#squeeze除去维数为1的维度
 
-        zero_vec = -9e15*torch.ones_like(e)
-        attention = torch.where(adj > 0, e, zero_vec)
-        attention = F.softmax(attention, dim=1)
+        zero_vec = -9e15*torch.ones_like(e)#维度大小与e相同，所有元素都是-9*10的15次方
+        attention = torch.where(adj > 0, e, zero_vec)#当adj>0(邻接矩阵adj)，即两结点有边，则用gat构建的矩阵e，若adj=0,则另其为一个很大的负数，这么做的原因是进行softmax时，这些数就会接近于0了
+        attention = F.softmax(attention, dim=1) #对应论文公式3，attention就是公式里的αij
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, Wh)
 
         if self.concat:
-            return F.elu(h_prime)
+            return F.elu(h_prime)#ELU激活函数，融合了sigmioid和Relu
         else:
             return h_prime
 
     def _prepare_attentional_mechanism_input(self, Wh):
-        N = Wh.size()[0] # number of nodes
+        N = Wh.size()[0] # number of nodes，节点的个数
 
         # Below, two matrices are created that contain embeddings in their rows in different orders.
         # (e stands for embedding)
@@ -53,8 +53,8 @@ class GraphAttentionLayer(nn.Module):
         # '----------------------------------------------------' -> N times
         # 
         
-        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)
-        Wh_repeated_alternating = Wh.repeat(N, 1)
+        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)#Wh.shape: (N, out_features)，现在(N * N, out_features),即Whi
+        Wh_repeated_alternating = Wh.repeat(N, 1)#二维，(N * N, out_features)，即Whj
         # Wh_repeated_in_chunks.shape == Wh_repeated_alternating.shape == (N * N, out_features)
 
         # The all_combination_matrix, created below, will look like this (|| denotes concatenation):
@@ -76,9 +76,9 @@ class GraphAttentionLayer(nn.Module):
         # eN || eN
 
         all_combinations_matrix = torch.cat([Wh_repeated_in_chunks, Wh_repeated_alternating], dim=1)
-        # all_combinations_matrix.shape == (N * N, 2 * out_features)
+        # all_combinations_matrix.shape == (N * N, 2 * out_features)，也就是Whi*Whj,
 
-        return all_combinations_matrix.view(N, N, 2 * self.out_features)
+        return all_combinations_matrix.view(N, N, 2 * self.out_features)#view是把原先的tensor数据按照行优先的顺序排成一维的数据，然后按照参数组合成其他维度。
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
