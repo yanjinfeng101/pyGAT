@@ -7,6 +7,7 @@ from layers import GraphAttentionLayer, SpGraphAttentionLayer
 class GAT(nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout, alpha, nheads):
         """Dense version of GAT."""
+        #nheads表示有几个GAL层，最后拼接在一起
         super(GAT, self).__init__()
         self.dropout = dropout
 
